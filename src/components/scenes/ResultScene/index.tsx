@@ -188,7 +188,7 @@ const UnlockModal: React.FC<{
 // ==== 主场景 ====
 const ResultScene: React.FC = () => {
   const navigate = useNavigate()
-  const { state, dispatch, checkUnlockRecipes } = useGame()
+  const { state, dispatch, checkUnlockRecipes, selectRecipe } = useGame()
   const { selectedRecipe, mode, chopRhythmScores, seasonTimingScores,
           heatHistory, stirQuality, incidentsResolved, timer, scoreHistory,
           unlockedAchievements, finalScore, mode: gameMode } = state
@@ -223,6 +223,8 @@ const ResultScene: React.FC = () => {
       durationSeconds: timer.totalSeconds - timer.remainingSeconds,
       date: new Date().toISOString(),
       mode: gameMode,
+      incidentsResolved,
+      incidentsFailed: state.incidentsFailed,
     }
     dispatch({ type: 'ADD_SCORE_RECORD', record })
 
@@ -238,7 +240,7 @@ const ResultScene: React.FC = () => {
 
     // 检查菜谱解锁
     const t2 = setTimeout(() => {
-      const newlyUnlocked = checkUnlockRecipes()
+      const newlyUnlocked = checkUnlockRecipes(record)
       if (newlyUnlocked.length > 0) {
         setNewUnlocks(prev => ({ ...prev, recipes: newlyUnlocked }))
         setNewRecipe(newlyUnlocked[0])
@@ -249,7 +251,7 @@ const ResultScene: React.FC = () => {
         recipesCooked: new Set([...scoreHistory.map(s => s.recipeId), selectedRecipe.id]).size,
         maxStars: Math.max(...scoreHistory.map(s => s.stars), calculated.stars),
         coopGames: scoreHistory.filter(s => s.mode === 'coop').length + (gameMode === 'coop' ? 1 : 0),
-        incidentsSolved: scoreHistory.reduce((s, _) => s, 0) + incidentsResolved,
+        incidentsSolved: scoreHistory.reduce((sum, s) => sum + (s.incidentsResolved || 0), 0) + incidentsResolved,
         ingredientsLearned: state.learnedIngredients.length,
       }
       const newlyAchieved: string[] = []
@@ -500,8 +502,32 @@ const ResultScene: React.FC = () => {
             size="lg"
             leftIcon="🔄"
             onClick={() => {
-              dispatch({ type: 'SET_SCENE', scene: 'prep' })
-              navigate('/prep')
+              sound.playClick()
+              selectRecipe(selectedRecipe)
+              // 自动分配任务（单人模式全P1，双人模式按建议分配）
+              setTimeout(() => {
+                if (mode === 'single') {
+                  selectedRecipe.steps.forEach(step => {
+                    step.tasks.forEach(task => {
+                      dispatch({ type: 'ASSIGN_TASK', taskId: task.id, player: 'p1' })
+                    })
+                  })
+                } else {
+                  selectedRecipe.steps.forEach(step => {
+                    step.tasks.forEach(task => {
+                      dispatch({
+                        type: 'ASSIGN_TASK',
+                        taskId: task.id,
+                        player: task.suggestedPlayer && task.suggestedPlayer !== 'any'
+                          ? task.suggestedPlayer
+                          : (task.difficulty === 'easy' ? 'p2' : 'p1')
+                      })
+                    })
+                  })
+                }
+                dispatch({ type: 'SET_SCENE', scene: 'prep' })
+                navigate('/prep')
+              }, 50)
             }}
           >
             再做一次

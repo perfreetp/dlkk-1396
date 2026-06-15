@@ -432,7 +432,7 @@ const HistoryTable: React.FC = () => {
                         <p className="text-[11px] text-gray-400 mt-0.5">
                           准确度 {r.accuracyScore} · 
                           {r.mode === 'coop' ? ` 配合度 ${r.cooperationScore} ·` : ''}
-                          {' '}用时 {formatTime(r.durationSeconds)}
+                          {' '}解决小状况${r.incidentsResolved || 0}次 · 用时 {formatTime(r.durationSeconds)}
                         </p>
                       </div>
                       <span className="text-xs text-gray-400 shrink-0">

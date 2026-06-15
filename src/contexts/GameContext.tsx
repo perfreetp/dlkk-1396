@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react'
-import type { GameState, GameAction, Recipe } from '../types/game'
+import type { GameState, GameAction, Recipe, ScoreRecord } from '../types/game'
 import { RECIPES } from '../data/recipes'
 
 export const STORAGE_KEY = 'kitchen_coop_game_state_v1'
@@ -287,7 +287,7 @@ interface GameContextValue {
   startCooking: () => void
   finishCooking: () => void
   resetSession: () => void
-  checkUnlockRecipes: () => string[]
+  checkUnlockRecipes: (extraRecord?: ScoreRecord) => string[]
 }
 
 const GameContext = createContext<GameContextValue | null>(null)
@@ -326,10 +326,11 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     dispatch({ type: 'RESET_SESSION' })
   }, [])
 
-  const checkUnlockRecipes = useCallback((): string[] => {
+  const checkUnlockRecipes = useCallback((extraRecord?: ScoreRecord): string[] => {
     const newlyUnlocked: string[] = []
-    const recipesCooked = new Set(state.scoreHistory.map(s => s.recipeId)).size
-    const totalStars = state.scoreHistory.reduce((sum, s) => sum + s.stars, 0)
+    const allRecords = extraRecord ? [...state.scoreHistory, extraRecord] : state.scoreHistory
+    const recipesCooked = new Set(allRecords.map(s => s.recipeId)).size
+    const totalStars = allRecords.reduce((sum, s) => sum + s.stars, 0)
     
     RECIPES.forEach(recipe => {
       if (state.unlockedRecipes.includes(recipe.id)) return
@@ -340,7 +341,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (recipe.id === 'potato_beef' && recipesCooked >= 1) {
         newlyUnlocked.push(recipe.id)
       }
-      if (recipe.id === 'mushroom_soup' && state.scoreHistory.some(s => s.recipeId === 'tomato_egg')) {
+      if (recipe.id === 'mushroom_soup' && allRecords.some(s => s.recipeId === 'tomato_egg')) {
         newlyUnlocked.push(recipe.id)
       }
       if (recipe.id === 'steamed_fish' && totalStars >= 10) {

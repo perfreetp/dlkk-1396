@@ -651,7 +651,7 @@ const SimpleTask: React.FC<{
 // ==== 任务执行阶段 ====
 const TaskExecutor: React.FC = () => {
   const navigate = useNavigate()
-  const { state, dispatch } = useGame()
+  const { state, dispatch, finishCooking } = useGame()
   const { selectedRecipe, mode, taskAssignments, currentStepIndex, stepsCompleted } = state
   const [currentTaskIdx, setCurrentTaskIdx] = useState(0)
   const showBubble = useSpeechBubble()
@@ -692,13 +692,16 @@ const TaskExecutor: React.FC = () => {
           dispatch({ type: 'SET_SCENE', scene: 'cook' })
           setTimeout(() => navigate('/cook'), 800)
         } else {
-          dispatch({ type: 'SET_SCENE', scene: 'cook' })
-          setTimeout(() => navigate('/cook'), 800)
+          showBubble('所有步骤完成！上菜啦~', 'success')
+          sound.playSuccess()
+          speech.quickPhrase('well_done')
+          finishCooking()
+          setTimeout(() => navigate('/result'), 800)
         }
       }
     }
   }, [currentStep, currentTaskIdx, currentStepIndex, prepSteps.length, selectedRecipe, 
-      dispatch, navigate, hasCookPhase, showBubble, sound, speech])
+      dispatch, navigate, hasCookPhase, showBubble, sound, speech, finishCooking])
 
   const onTaskComplete = useCallback((_score: number) => {
     sound.playClick()

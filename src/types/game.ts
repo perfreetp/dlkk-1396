@@ -101,6 +101,8 @@ export interface ScoreRecord {
   durationSeconds: number
   date: string
   mode: GameMode
+  incidentsResolved?: number
+  incidentsFailed?: number
 }
 
 export interface Achievement {
