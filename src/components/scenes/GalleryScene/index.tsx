@@ -10,10 +10,12 @@ import { useSoundFX } from '@/hooks/useSoundFX'
 import { RECIPES } from '@/data/recipes'
 import { INGREDIENTS } from '@/data/ingredients'
 import { ACHIEVEMENTS } from '@/data/achievements'
+import { STICKERS, getStickerById } from '@/data/stickers'
+import { generateWeeklyChallenges, getCurrentWeekKey } from '@/data/weeklyChallenges'
 import { formatTime, getPlayerLabel } from '@/utils/scoring'
-import type { ScoreRecord } from '@/types/game'
+import type { ScoreRecord, WeeklyChallenge } from '@/types/game'
 
-type Tab = 'recipes' | 'ingredients' | 'achievements' | 'history'
+type Tab = 'recipes' | 'ingredients' | 'weekly' | 'achievements' | 'stickers' | 'history'
 
 const TabButton: React.FC<{
   active: boolean
@@ -338,7 +340,21 @@ const AchievementWall: React.FC = () => {
 // ==== 历史成绩 ====
 const HistoryTable: React.FC = () => {
   const { state } = useGame()
-  const { scoreHistory } = state
+  const { scoreHistory, familyMembers } = state
+
+  const getPlayerInfo = (record: ScoreRecord, player: 'p1' | 'p2') => {
+    const defaultMember = familyMembers.find(m => m.id === `${player}_default`)
+    if (player === 'p1') {
+      return {
+        name: record.p1Name || defaultMember?.name || '玩家1',
+        avatar: defaultMember?.avatar || '👨‍🍳',
+      }
+    }
+    return {
+      name: record.p2Name || defaultMember?.name || '玩家2',
+      avatar: defaultMember?.avatar || '👧🍳',
+    }
+  }
 
   const grouped = useMemo(() => {
     const map: Record<string, ScoreRecord[]> = {}
@@ -414,7 +430,7 @@ const HistoryTable: React.FC = () => {
                     <div key={r.id} className="px-4 py-3 flex items-center gap-3 hover:bg-cream-50/50">
                       <span className="text-xs text-gray-400 w-14 shrink-0">#{records.length - i}</span>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-happy text-lg text-warm-500">
                             {r.totalScore}
                           </span>
@@ -428,6 +444,32 @@ const HistoryTable: React.FC = () => {
                           }`}>
                             {r.mode === 'coop' ? '双人' : '单人'}
                           </span>
+                          <div className="flex items-center gap-1.5 ml-1">
+                            {r.mode === 'coop' ? (
+                              <>
+                                <div className="flex -space-x-1">
+                                  <span className="text-base" title={getPlayerInfo(r, 'p1').name}>
+                                    {getPlayerInfo(r, 'p1').avatar}
+                                  </span>
+                                  <span className="text-base" title={getPlayerInfo(r, 'p2').name}>
+                                    {getPlayerInfo(r, 'p2').avatar}
+                                  </span>
+                                </div>
+                                <span className="text-[11px] text-gray-500">
+                                  {getPlayerInfo(r, 'p1').name} & {getPlayerInfo(r, 'p2').name}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-base" title={getPlayerInfo(r, 'p1').name}>
+                                  {getPlayerInfo(r, 'p1').avatar}
+                                </span>
+                                <span className="text-[11px] text-gray-500">
+                                  {getPlayerInfo(r, 'p1').name} 单人
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
                         <p className="text-[11px] text-gray-400 mt-0.5">
                           准确度 {r.accuracyScore} · 
@@ -451,6 +493,340 @@ const HistoryTable: React.FC = () => {
   )
 }
 
+// ==== 每周挑战 ====
+const WeeklyChallenges: React.FC = () => {
+  const { state, addSticker, claimWeeklyReward } = useGame()
+  const { weeklyProgress } = state
+  const sound = useSoundFX()
+
+  const weekKey = weeklyProgress?.weekKey || getCurrentWeekKey()
+  const challenges: WeeklyChallenge[] = generateWeeklyChallenges(weekKey)
+  const weekNumber = parseInt(weekKey.split('-W')[1] || '0', 10)
+
+  const handleClaim = (challenge: WeeklyChallenge) => {
+    sound.playClick()
+    const sticker = getStickerById(challenge.reward)
+    if (sticker) {
+      addSticker(sticker)
+    }
+    claimWeeklyReward(challenge.id)
+  }
+
+  const getStatus = (challenge: WeeklyChallenge) => {
+    const progress = weeklyProgress?.progress[challenge.id] || 0
+    const claimed = weeklyProgress?.claimed.includes(challenge.id)
+    const completed = progress >= challenge.target
+
+    if (claimed) return 'claimed'
+    if (completed) return 'completed'
+    return 'in_progress'
+  }
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'claimed': return '✓ 已领取'
+      case 'completed': return '已完成'
+      default: return '进行中'
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'claimed': return '#9CA3AF'
+      case 'completed': return '#7FD1AE'
+      default: return '#FFB366'
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center mb-6">
+        <motion.div
+          animate={{ y: [0, -5, 0] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="text-6xl mb-2"
+        >
+          🎯
+        </motion.div>
+        <h3 className="font-happy text-2xl text-warm-500">
+          本周挑战 · 第{weekNumber}周
+        </h3>
+        <p className="text-sm text-gray-400 mt-1">
+          完成挑战，收集限定贴纸！
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {challenges.map((challenge, idx) => {
+          const progress = weeklyProgress?.progress[challenge.id] || 0
+          const status = getStatus(challenge)
+          const progressPercent = Math.min(100, (progress / challenge.target) * 100)
+          const rewardSticker = getStickerById(challenge.reward)
+
+          return (
+            <motion.div
+              key={challenge.id}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.1 }}
+            >
+              <Card
+                color={getStatusColor(status)}
+                className={`relative overflow-hidden ${status === 'claimed' ? 'opacity-70' : ''}`}
+              >
+                <div className="flex items-center gap-4">
+                  <motion.div
+                    animate={status === 'completed' ? {
+                      scale: [1, 1.1, 1],
+                      transition: { repeat: Infinity, duration: 1.5 }
+                    } : undefined}
+                    className="text-5xl shrink-0"
+                  >
+                    {challenge.icon}
+                  </motion.div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <h4 className="font-happy text-xl text-gray-700">
+                        {challenge.title}
+                      </h4>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full font-happy"
+                        style={{
+                          background: `${getStatusColor(status)}20`,
+                          color: getStatusColor(status),
+                        }}
+                      >
+                        {getStatusText(status)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-3">
+                      {challenge.description}
+                    </p>
+
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-3 bg-cream-200 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${progressPercent}%` }}
+                          transition={{ duration: 0.8, delay: idx * 0.1 + 0.2 }}
+                          className="h-full rounded-full"
+                          style={{
+                            background: status === 'claimed'
+                              ? '#9CA3AF'
+                              : `linear-gradient(90deg, ${getStatusColor(status)}, ${getStatusColor(status)}dd)`,
+                          }}
+                        />
+                      </div>
+                      <span className="font-happy text-sm text-gray-600 shrink-0">
+                        {Math.min(progress, challenge.target)}/{challenge.target}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-center">
+                    <div className="text-3xl mb-1">
+                      {rewardSticker?.emoji || '🎁'}
+                    </div>
+                    {status === 'completed' && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => handleClaim(challenge)}
+                        className="mt-1"
+                      >
+                        领取奖励
+                      </Button>
+                    )}
+                    {status === 'claimed' && (
+                      <span className="text-xs text-gray-400 font-happy">
+                        ✓ 已领取
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ==== 贴纸收藏 ====
+const StickerCollection: React.FC = () => {
+  const { state } = useGame()
+  const { stickers } = state
+  const sound = useSoundFX()
+  const [selectedSticker, setSelectedSticker] = useState<string | null>(null)
+
+  const categories = [
+    { id: 'challenge', label: '挑战贴纸', icon: '🎯' },
+    { id: 'achievement', label: '成就贴纸', icon: '🏆' },
+    { id: 'special', label: '特殊贴纸', icon: '✨' },
+  ]
+
+  const getRarityColor = (rarity: string) => {
+    switch (rarity) {
+      case 'epic': return '#C9B1FF'
+      case 'rare': return '#7FD1AE'
+      default: return '#FFB366'
+    }
+  }
+
+  const getRarityLabel = (rarity: string) => {
+    switch (rarity) {
+      case 'epic': return '史诗'
+      case 'rare': return '稀有'
+      default: return '普通'
+    }
+  }
+
+  const isUnlocked = (stickerId: string) => {
+    return stickers.some(s => s.id === stickerId)
+  }
+
+  const getObtainedSticker = (stickerId: string) => {
+    return stickers.find(s => s.id === stickerId)
+  }
+
+  const handleStickerClick = (stickerId: string) => {
+    if (isUnlocked(stickerId)) {
+      sound.playClick()
+      setSelectedSticker(selectedSticker === stickerId ? null : stickerId)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center mb-6">
+        <motion.div
+          animate={{ rotate: [0, 10, -10, 0] }}
+          transition={{ repeat: Infinity, duration: 3 }}
+          className="text-6xl mb-2"
+        >
+          🎨
+        </motion.div>
+        <h3 className="font-happy text-2xl text-warm-500">
+          贴纸收藏
+        </h3>
+        <p className="text-sm text-gray-400 mt-1">
+          已收集 {stickers.length}/{STICKERS.length} 张贴纸
+        </p>
+      </div>
+
+      {categories.map(cat => {
+        const catStickers = STICKERS.filter(s => s.category === cat.id)
+        if (catStickers.length === 0) return null
+
+        const unlockedCount = catStickers.filter(s => isUnlocked(s.id)).length
+
+        return (
+          <div key={cat.id}>
+            <h4 className="font-happy text-xl text-gray-700 mb-3 flex items-center gap-2">
+              <span>{cat.icon}</span>
+              {cat.label}
+              <span className="text-xs font-body text-gray-400 ml-2">
+                {unlockedCount}/{catStickers.length}
+              </span>
+            </h4>
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+              {catStickers.map((sticker, idx) => {
+                const unlocked = isUnlocked(sticker.id)
+                const obtained = getObtainedSticker(sticker.id)
+                const isSelected = selectedSticker === sticker.id
+
+                return (
+                  <motion.div
+                    key={sticker.id}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: idx * 0.03 }}
+                    className="relative"
+                  >
+                    <motion.div
+                      whileHover={unlocked ? { scale: 1.05, y: -4 } : undefined}
+                      whileTap={unlocked ? { scale: 0.95 } : undefined}
+                      onClick={() => handleStickerClick(sticker.id)}
+                      className={`
+                        rounded-2xl p-4 text-center cursor-pointer border-2
+                        transition-all
+                        ${unlocked 
+                          ? 'bg-white border-cream-200 hover:border-warm-300' 
+                          : 'bg-gray-100 border-gray-200 grayscale opacity-60'}
+                        ${isSelected ? 'ring-4 ring-warm-300 ring-opacity-50' : ''}
+                      `}
+                      style={{
+                        boxShadow: unlocked
+                          ? `0 0 20px ${getRarityColor(sticker.rarity)}40`
+                          : 'none',
+                      }}
+                    >
+                      <motion.div
+                        animate={unlocked ? {
+                          rotate: [0, 5, -5, 0],
+                          transition: {
+                            repeat: Infinity,
+                            repeatDelay: 2 + idx,
+                            duration: 0.8,
+                          }
+                        } : undefined}
+                        className="text-4xl mb-2"
+                      >
+                        {unlocked ? sticker.emoji : '❓'}
+                      </motion.div>
+                      <h5 className={`font-happy text-sm ${
+                        unlocked ? 'text-gray-700' : 'text-gray-400'
+                      }`}>
+                        {unlocked ? sticker.name : '???'}
+                      </h5>
+                      {unlocked && (
+                        <span
+                          className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full"
+                          style={{
+                            background: `${getRarityColor(sticker.rarity)}20`,
+                            color: getRarityColor(sticker.rarity),
+                          }}
+                        >
+                          {getRarityLabel(sticker.rarity)}
+                        </span>
+                      )}
+                    </motion.div>
+
+                    <AnimatePresence>
+                      {isSelected && obtained && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          className="absolute z-10 top-full left-0 right-0 mt-2"
+                        >
+                          <Card color={getRarityColor(sticker.rarity)} className="text-left">
+                            <h5 className="font-happy text-lg text-gray-700 mb-1">
+                              {sticker.emoji} {sticker.name}
+                            </h5>
+                            <p className="text-xs text-gray-500 mb-2">
+                              {sticker.description}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                              获得时间：{new Date(obtained.obtainedAt || '').toLocaleDateString('zh-CN')}
+                            </p>
+                          </Card>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 const StatBox: React.FC<{ icon: string; label: string; value: string; color: string }> = ({ 
   icon, label, value, color 
 }) => (
@@ -469,14 +845,22 @@ const StatBox: React.FC<{ icon: string; label: string; value: string; color: str
 const GalleryScene: React.FC = () => {
   const navigate = useNavigate()
   const { state } = useGame()
-  const { unlockedRecipes, learnedIngredients, unlockedAchievements, scoreHistory } = state
+  const { unlockedRecipes, learnedIngredients, unlockedAchievements, scoreHistory, stickers, weeklyProgress } = state
   const [tab, setTab] = useState<Tab>('recipes')
   const sound = useSoundFX()
+
+  const weekKey = weeklyProgress?.weekKey || getCurrentWeekKey()
+  const weeklyChallenges = generateWeeklyChallenges(weekKey)
+  const completedWeekly = weeklyChallenges.filter(c => 
+    (weeklyProgress?.progress[c.id] || 0) >= c.target
+  ).length
 
   const tabs: { id: Tab; icon: string; label: string; count: string }[] = [
     { id: 'recipes', icon: '📖', label: '菜谱图鉴', count: `${unlockedRecipes.length}/${RECIPES.length}` },
     { id: 'ingredients', icon: '🥕', label: '食材知识', count: `${learnedIngredients.length}/${INGREDIENTS.length}` },
+    { id: 'weekly', icon: '🎯', label: '每周挑战', count: `${completedWeekly}/${weeklyChallenges.length}` },
     { id: 'achievements', icon: '🏅', label: '成就徽章', count: `${unlockedAchievements.length}/${ACHIEVEMENTS.length}` },
+    { id: 'stickers', icon: '🎨', label: '贴纸收藏', count: `${stickers.length}/${STICKERS.length}` },
     { id: 'history', icon: '📊', label: '历史成绩', count: `${scoreHistory.length}` },
   ]
 
@@ -535,7 +919,9 @@ const GalleryScene: React.FC = () => {
             >
               {tab === 'recipes' && <RecipeBook />}
               {tab === 'ingredients' && <IngredientCards />}
+              {tab === 'weekly' && <WeeklyChallenges />}
               {tab === 'achievements' && <AchievementWall />}
+              {tab === 'stickers' && <StickerCollection />}
               {tab === 'history' && <HistoryTable />}
             </motion.div>
           </AnimatePresence>

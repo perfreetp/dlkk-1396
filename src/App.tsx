@@ -6,6 +6,7 @@ import PrepScene from './components/scenes/PrepScene'
 import CookScene from './components/scenes/CookScene'
 import ResultScene from './components/scenes/ResultScene'
 import GalleryScene from './components/scenes/GalleryScene'
+import PracticeScene from './components/scenes/PracticeScene'
 import { useGame } from './contexts/GameContext'
 
 const SceneWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -93,6 +94,14 @@ function App() {
           element={
             <SceneWrapper>
               <GalleryScene />
+            </SceneWrapper>
+          } 
+        />
+        <Route 
+          path="/practice" 
+          element={
+            <SceneWrapper>
+              <PracticeScene />
             </SceneWrapper>
           } 
         />

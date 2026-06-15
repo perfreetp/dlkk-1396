@@ -68,7 +68,10 @@ const TaskChip: React.FC<{
 // ==== 任务分配阶段 ====
 const TaskAssigner: React.FC<{ onStart: () => void }> = ({ onStart }) => {
   const { state, dispatch } = useGame()
-  const { selectedRecipe, mode, taskAssignments } = state
+  const { selectedRecipe, mode, taskAssignments, familyMembers } = state
+
+  const p1Member = familyMembers.find(m => m.id === 'p1_default') || familyMembers[0]
+  const p2Member = familyMembers.find(m => m.id === 'p2_default') || familyMembers[1]
   const showBubble = useSpeechBubble()
   const sound = useSoundFX()
 
@@ -138,10 +141,16 @@ const TaskAssigner: React.FC<{ onStart: () => void }> = ({ onStart }) => {
         {mode === 'coop' ? (
           <>
             <div className="player-zone-p1 rounded-3xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <span className={`${getPlayerLabel('p1').color} px-3 py-1 rounded-xl font-happy text-sm`}>
-                  {getPlayerLabel('p1').short} · 家长
-                </span>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-3xl">{p1Member?.avatar || '👨‍🍳'}</span>
+                <div>
+                  <span className={`${getPlayerLabel('p1').color} px-2 py-0.5 rounded-lg font-happy text-xs`}>
+                    {getPlayerLabel('p1').short}
+                  </span>
+                  <h4 className="font-happy text-lg text-gray-800 mt-0.5">
+                    {p1Member?.name || '家长'}
+                  </h4>
+                </div>
               </div>
               <div className="space-y-2 min-h-[200px]">
                 {allTasks.filter(t => taskAssignments[t.id] === 'p1').map(task => (
@@ -183,10 +192,16 @@ const TaskAssigner: React.FC<{ onStart: () => void }> = ({ onStart }) => {
             </div>
 
             <div className="player-zone-p2 rounded-3xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <span className={`${getPlayerLabel('p2').color} px-3 py-1 rounded-xl font-happy text-sm`}>
-                  {getPlayerLabel('p2').short} · 孩子
-                </span>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-3xl">{p2Member?.avatar || '👧🍳'}</span>
+                <div>
+                  <span className={`${getPlayerLabel('p2').color} px-2 py-0.5 rounded-lg font-happy text-xs`}>
+                    {getPlayerLabel('p2').short}
+                  </span>
+                  <h4 className="font-happy text-lg text-gray-800 mt-0.5">
+                    {p2Member?.name || '小朋友'}
+                  </h4>
+                </div>
               </div>
               <div className="space-y-2 min-h-[200px]">
                 {allTasks.filter(t => taskAssignments[t.id] === 'p2').map(task => (

@@ -237,13 +237,185 @@ const RecipeDetailModal: React.FC<{
   )
 }
 
+const PARENT_AVATARS = ['👨‍🍳', '👩‍🍳', '🧑‍🍳']
+const CHILD_AVATARS = ['👦🍳', '👧🍳', '🧒🍳', '👶🍳']
+const TASK_TYPES = [
+  { type: 'chop', label: '切菜', emoji: '🔪' },
+  { type: 'season', label: '调味', emoji: '🧂' },
+  { type: 'stir', label: '翻炒', emoji: '🥄' },
+  { type: 'wash', label: '清洗', emoji: '💧' },
+] as const
+
+const FamilyMemberCard: React.FC<{
+  member: { id: string; name: string; avatar: string; role: string; preferTaskType?: string }
+  playerLabel: 'p1' | 'p2'
+  isEditing: boolean
+  onEdit: () => void
+  onSave: (data: { name: string; avatar: string; preferTaskType: string }) => void
+  onCancel: () => void
+}> = ({ member, playerLabel, isEditing, onEdit, onSave, onCancel }) => {
+  const [editName, setEditName] = useState(member.name)
+  const [editAvatar, setEditAvatar] = useState(member.avatar)
+  const [editTaskType, setEditTaskType] = useState(member.preferTaskType || 'chop')
+
+  const avatars = member.role === 'parent' ? PARENT_AVATARS : CHILD_AVATARS
+  const isP1 = playerLabel === 'p1'
+  const taskInfo = TASK_TYPES.find(t => t.type === member.preferTaskType) || TASK_TYPES[0]
+
+  const handleSave = () => {
+    onSave({ name: editName, avatar: editAvatar, preferTaskType: editTaskType })
+  }
+
+  if (isEditing) {
+    return (
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className={`
+          relative rounded-3xl p-5 border-4 shadow-lg
+          ${isP1 ? 'bg-gradient-to-br from-sky-50 to-blue-100 border-sky-300' : 'bg-gradient-to-br from-pink-50 to-rose-100 border-pink-300'}
+        `}
+      >
+        <div className="text-center">
+          <p className={`font-happy text-sm mb-2 ${isP1 ? 'text-sky-500' : 'text-pink-500'}`}>
+            {isP1 ? 'P1 · 家长' : 'P2 · 孩子'}
+          </p>
+          
+          <div className="flex justify-center gap-2 mb-3 flex-wrap">
+            {avatars.map(avatar => (
+              <motion.button
+                key={avatar}
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setEditAvatar(avatar)}
+                className={`
+                  text-3xl p-2 rounded-2xl transition-all
+                  ${editAvatar === avatar 
+                    ? 'bg-white shadow-md scale-110' 
+                    : 'bg-white/50 hover:bg-white/80'}
+                `}
+              >
+                {avatar}
+              </motion.button>
+            ))}
+          </div>
+
+          <input
+            type="text"
+            value={editName}
+            onChange={e => setEditName(e.target.value)}
+            maxLength={8}
+            className="
+              w-full text-center font-happy text-lg py-2 px-3 rounded-xl
+              border-2 border-cream-300 focus:border-warm-400 focus:outline-none
+              bg-white/90 text-gray-700 mb-3
+            "
+            placeholder="输入昵称"
+          />
+
+          <p className="text-xs text-gray-500 mb-2">偏好任务</p>
+          <div className="flex justify-center gap-2 mb-4 flex-wrap">
+            {TASK_TYPES.map(task => (
+              <motion.button
+                key={task.type}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setEditTaskType(task.type)}
+                className={`
+                  px-3 py-1.5 rounded-xl text-sm font-happy transition-all
+                  ${editTaskType === task.type
+                    ? 'bg-warm-400 text-white shadow-md'
+                    : 'bg-white/70 text-gray-600 hover:bg-white'}
+                `}
+              >
+                {task.emoji} {task.label}
+              </motion.button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onCancel}
+              className="flex-1"
+            >
+              取消
+            </Button>
+            <Button
+              variant="success"
+              size="sm"
+              onClick={handleSave}
+              className="flex-1"
+              leftIcon="✓"
+            >
+              保存
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    )
+  }
+
+  return (
+    <motion.button
+      whileHover={{ y: -6, scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      animate={{ y: [0, -4, 0] }}
+      transition={{ 
+        y: { duration: 3, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' }
+      }}
+      onClick={onEdit}
+      className={`
+        relative w-full text-left rounded-3xl p-5 border-4 shadow-lg
+        transition-all duration-300 cursor-pointer
+        ${isP1 
+          ? 'bg-gradient-to-br from-sky-50 to-blue-100 border-sky-300 hover:border-sky-400' 
+          : 'bg-gradient-to-br from-pink-50 to-rose-100 border-pink-300 hover:border-pink-400'}
+      `}
+    >
+      <div className="flex items-center gap-4">
+        <div className="text-5xl">{member.avatar}</div>
+        <div className="flex-1 min-w-0">
+          <p className={`font-happy text-sm mb-1 ${isP1 ? 'text-sky-500' : 'text-pink-500'}`}>
+            {isP1 ? 'P1 · 家长' : 'P2 · 孩子'}
+          </p>
+          <h3 className="font-happy text-xl text-gray-800 truncate">{member.name}</h3>
+          <div className="flex items-center gap-1 mt-1">
+            <span className="text-lg">{taskInfo.emoji}</span>
+            <span className="text-xs text-gray-500">最爱{taskInfo.label}</span>
+          </div>
+        </div>
+        <div className="text-gray-300 text-xl">✏️</div>
+      </div>
+    </motion.button>
+  )
+}
+
 const MenuScene: React.FC = () => {
   const navigate = useNavigate()
-  const { state, dispatch, selectRecipe, startCooking, checkUnlockRecipes } = useGame()
-  const { selectedRecipe, unlockedRecipes, mode, scoreHistory, learnedIngredients } = state
+  const { state, dispatch, selectRecipe, startCooking, checkUnlockRecipes, setFamilyMember } = useGame()
+  const { selectedRecipe, unlockedRecipes, mode, scoreHistory, learnedIngredients, familyMembers } = state
   const [detailRecipe, setDetailRecipe] = useState<Recipe | null>(null)
+  const [editingMember, setEditingMember] = useState<'p1' | 'p2' | null>(null)
   const showBubble = useSpeechBubble()
   const sound = useSoundFX()
+
+  const p1Member = familyMembers.find(m => m.id === 'p1_default') || familyMembers[0]
+  const p2Member = familyMembers.find(m => m.id === 'p2_default') || familyMembers[1]
+
+  const handleSaveMember = (player: 'p1' | 'p2', data: { name: string; avatar: string; preferTaskType: string }) => {
+    const member = player === 'p1' ? p1Member : p2Member
+    setFamilyMember({
+      ...member,
+      name: data.name,
+      avatar: data.avatar,
+      preferTaskType: data.preferTaskType as any,
+    })
+    setEditingMember(null)
+    sound.playSuccess()
+    showBubble('档案更新成功！', 'success')
+  }
 
   checkUnlockRecipes()
 
@@ -330,11 +502,51 @@ const MenuScene: React.FC = () => {
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => {
+                sound.playClick()
+                navigate('/practice')
+              }}
+              leftIcon="🎯"
+            >
+              练习
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => navigate('/gallery')}
               leftIcon="📚"
             >
               图鉴
             </Button>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mb-6"
+        >
+          <p className="font-happy text-lg text-gray-600 mb-3 text-center">
+            👨‍👩‍👧 家庭成员小档案
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
+            <FamilyMemberCard
+              member={p1Member}
+              playerLabel="p1"
+              isEditing={editingMember === 'p1'}
+              onEdit={() => setEditingMember('p1')}
+              onSave={(data) => handleSaveMember('p1', data)}
+              onCancel={() => setEditingMember(null)}
+            />
+            <FamilyMemberCard
+              member={p2Member}
+              playerLabel="p2"
+              isEditing={editingMember === 'p2'}
+              onEdit={() => setEditingMember('p2')}
+              onSave={(data) => handleSaveMember('p2', data)}
+              onCancel={() => setEditingMember(null)}
+            />
           </div>
         </motion.div>
 

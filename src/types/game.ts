@@ -103,6 +103,10 @@ export interface ScoreRecord {
   mode: GameMode
   incidentsResolved?: number
   incidentsFailed?: number
+  p1Name?: string
+  p2Name?: string
+  stepDurations?: { stepId: string; seconds: number }[]
+  feedback?: FeedbackItem[]
 }
 
 export interface Achievement {
@@ -116,6 +120,70 @@ export interface Achievement {
     value: number
     recipeId?: string
   }
+}
+
+// ==== 家庭成员档案 ====
+export type FamilyRole = 'parent' | 'child'
+
+export interface FamilyMember {
+  id: string
+  name: string
+  avatar: string  // emoji
+  role: FamilyRole
+  preferTaskType?: TaskType
+}
+
+// ==== 复盘反馈 ====
+export type FeedbackType = 'praise' | 'tip' | 'practice'
+
+export interface FeedbackItem {
+  type: FeedbackType
+  icon: string
+  title: string
+  description: string
+}
+
+// ==== 贴纸/徽章 ====
+export interface Sticker {
+  id: string
+  name: string
+  emoji: string
+  description: string
+  category: 'challenge' | 'achievement' | 'special'
+  rarity: 'common' | 'rare' | 'epic'
+  obtainedAt?: string
+}
+
+// ==== 每周挑战 ====
+export interface WeeklyChallenge {
+  id: string
+  title: string
+  description: string
+  icon: string
+  type: 'cook' | 'learn_ingredient' | 'handle_incident' | 'coop' | 'practice'
+  target: number
+  reward: string  // sticker id
+  weekKey: string  // 如 '2026-W24'
+}
+
+export interface WeeklyProgress {
+  weekKey: string
+  progress: Record<string, number>  // challengeId -> 当前进度
+  completed: string[]  // 已完成的挑战id
+  claimed: string[]    // 已领取奖励的挑战id
+}
+
+// ==== 专项练习 ====
+export type PracticeType = 'chop' | 'season' | 'heat'
+
+export interface PracticeRecord {
+  id: string
+  type: PracticeType
+  score: number
+  accuracy: number
+  stars: number
+  date: string
+  durationSeconds: number
 }
 
 export interface GameState {
@@ -157,6 +225,10 @@ export interface GameState {
   unlockedAchievements: string[]
   scoreHistory: ScoreRecord[]
   learnedIngredients: string[]
+  familyMembers: FamilyMember[]
+  stickers: Sticker[]
+  weeklyProgress: WeeklyProgress | null
+  practiceHistory: PracticeRecord[]
 }
 
 export type GameAction =
@@ -187,3 +259,9 @@ export type GameAction =
   | { type: 'LEARN_INGREDIENT'; ingredientId: string }
   | { type: 'RESET_SESSION' }
   | { type: 'LOAD_STATE'; state: Partial<GameState> }
+  | { type: 'SET_FAMILY_MEMBER'; member: FamilyMember }
+  | { type: 'ADD_STICKER'; sticker: Sticker }
+  | { type: 'UPDATE_WEEKLY_PROGRESS'; challengeId: string; amount?: number }
+  | { type: 'CLAIM_WEEKLY_REWARD'; challengeId: string }
+  | { type: 'SET_WEEKLY_PROGRESS'; progress: WeeklyProgress }
+  | { type: 'ADD_PRACTICE_RECORD'; record: PracticeRecord }

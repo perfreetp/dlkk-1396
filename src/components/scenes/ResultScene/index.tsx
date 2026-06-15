@@ -13,8 +13,9 @@ import { useSpeech } from '@/hooks/useSpeech'
 import { calculateFinalScore, formatTime, getPlayerLabel } from '@/utils/scoring'
 import { ACHIEVEMENTS, checkAchievement } from '@/data/achievements'
 import { RECIPES } from '@/data/recipes'
+import { PRAISE_TEMPLATES, TIP_TEMPLATES, PRACTICE_TEMPLATES } from '@/data/feedback'
 import { genId } from '@/utils/scoring'
-import type { ScoreRecord, FinalScore } from '@/types/game'
+import type { ScoreRecord, FinalScore, FeedbackItem } from '@/types/game'
 
 // ==== 撒花特效 ====
 const Confetti: React.FC<{ show: boolean }> = ({ show }) => {
@@ -188,10 +189,11 @@ const UnlockModal: React.FC<{
 // ==== 主场景 ====
 const ResultScene: React.FC = () => {
   const navigate = useNavigate()
-  const { state, dispatch, checkUnlockRecipes, selectRecipe } = useGame()
+  const { state, dispatch, checkUnlockRecipes, selectRecipe, updateWeeklyProgress, ensureWeeklyProgress } = useGame()
   const { selectedRecipe, mode, chopRhythmScores, seasonTimingScores,
           heatHistory, stirQuality, incidentsResolved, timer, scoreHistory,
-          unlockedAchievements, finalScore, mode: gameMode } = state
+          unlockedAchievements, finalScore, mode: gameMode, familyMembers,
+          learnedIngredients } = state
   const showBubble = useSpeechBubble()
   const sound = useSoundFX()
   const speech = useSpeech()
@@ -202,6 +204,7 @@ const ResultScene: React.FC = () => {
   const [showUnlockModal, setShowUnlockModal] = useState(false)
   const [showAchievements, setShowAchievements] = useState<string[]>([])
   const [newRecipe, setNewRecipe] = useState<string | undefined>()
+  const [feedback, setFeedback] = useState<FeedbackItem[]>([])
 
   useEffect(() => {
     if (!selectedRecipe || score) return
@@ -209,6 +212,96 @@ const ResultScene: React.FC = () => {
     const calculated = calculateFinalScore(state)
     setScore(calculated)
     dispatch({ type: 'SET_FINAL_SCORE', score: calculated })
+
+    // 计算各项平均分用于生成反馈
+    const avg = (arr: number[]) => arr.length > 0 
+      ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0
+    const chopAvg = avg(chopRhythmScores)
+    const seasonAvg = avg(seasonTimingScores)
+    const heatOk = heatHistory.length > 0
+      ? Math.round((heatHistory.filter(h => h >= 35 && h <= 70).length / heatHistory.length) * 100) : 50
+    const timeUsed = timer.totalSeconds - timer.remainingSeconds
+    const estimatedTime = selectedRecipe.estimatedMinutes * 60
+
+    // 生成反馈
+    const generatedFeedback: FeedbackItem[] = []
+
+    // 1. 表扬 - 选一个做得好的地方
+    const praiseOptions = []
+    if (gameMode === 'coop' && calculated.cooperation > 80) {
+      praiseOptions.push(PRAISE_TEMPLATES[0])
+    }
+    if (calculated.accuracy > 80) {
+      praiseOptions.push(PRAISE_TEMPLATES[2])
+    }
+    if (timeUsed < estimatedTime * 0.8) {
+      praiseOptions.push(PRAISE_TEMPLATES[1])
+    }
+    if (incidentsResolved >= 2) {
+      praiseOptions.push(PRAISE_TEMPLATES[3])
+    }
+    if (heatOk >= 70) {
+      praiseOptions.push(PRAISE_TEMPLATES[4])
+    }
+    if (praiseOptions.length === 0) {
+      praiseOptions.push(PRAISE_TEMPLATES[2])
+    }
+    generatedFeedback.push(praiseOptions[Math.floor(Math.random() * praiseOptions.length)])
+
+    // 2. 改进提示 - 选一个需要改进的地方
+    let tipItem = null
+    const weakPoints = []
+    if (chopAvg < 60 && chopRhythmScores.length > 0) {
+      weakPoints.push({ key: 'bad_chop', score: chopAvg })
+    }
+    if (seasonAvg < 60 && seasonTimingScores.length > 0) {
+      weakPoints.push({ key: 'bad_season', score: seasonAvg })
+    }
+    if (heatOk < 60) {
+      weakPoints.push({ key: 'bad_heat', score: heatOk })
+    }
+    if (timeUsed > estimatedTime * 1.2) {
+      weakPoints.push({ key: 'slow_cook', score: 50 })
+    }
+    if (state.incidentsFailed >= 2) {
+      weakPoints.push({ key: 'many_incidents', score: 40 })
+    }
+    if (gameMode === 'coop' && calculated.cooperation < 60) {
+      weakPoints.push({ key: 'bad_coop', score: calculated.cooperation })
+    }
+    
+    if (weakPoints.length > 0) {
+      weakPoints.sort((a, b) => a.score - b.score)
+      tipItem = TIP_TEMPLATES[weakPoints[0].key]
+    } else {
+      tipItem = TIP_TEMPLATES['slow_prep']
+    }
+    generatedFeedback.push(tipItem)
+
+    // 3. 练习建议 - 对应最薄弱的技能
+    let practiceItem = null
+    const practiceScores = []
+    if (chopRhythmScores.length > 0) {
+      practiceScores.push({ type: 'chop', score: chopAvg })
+    }
+    if (seasonTimingScores.length > 0) {
+      practiceScores.push({ type: 'season', score: seasonAvg })
+    }
+    practiceScores.push({ type: 'heat', score: heatOk })
+    
+    if (practiceScores.length > 0) {
+      practiceScores.sort((a, b) => a.score - b.score)
+      practiceItem = PRACTICE_TEMPLATES[practiceScores[0].type]
+    } else {
+      practiceItem = PRACTICE_TEMPLATES['chop']
+    }
+    generatedFeedback.push(practiceItem)
+
+    setFeedback(generatedFeedback)
+
+    // 获取家庭成员名
+    const p1Member = familyMembers.find(m => m.id === 'p1_default') || familyMembers[0]
+    const p2Member = familyMembers.find(m => m.id === 'p2_default') || familyMembers[1]
 
     // 保存成绩记录
     const record: ScoreRecord = {
@@ -225,8 +318,26 @@ const ResultScene: React.FC = () => {
       mode: gameMode,
       incidentsResolved,
       incidentsFailed: state.incidentsFailed,
+      p1Name: p1Member?.name,
+      p2Name: gameMode === 'coop' ? p2Member?.name : undefined,
+      feedback: generatedFeedback,
     }
     dispatch({ type: 'ADD_SCORE_RECORD', record })
+
+    // 更新每周挑战进度
+    ensureWeeklyProgress()
+    setTimeout(() => {
+      updateWeeklyProgress('wc_cook_3', 1)
+      if (gameMode === 'coop') {
+        updateWeeklyProgress('wc_coop_5', 1)
+      }
+      if (selectedRecipe.id === 'vegetable_salad') {
+        updateWeeklyProgress('wc_cook_salad', 1)
+      }
+      if (incidentsResolved > 0) {
+        updateWeeklyProgress('wc_incident_10', incidentsResolved)
+      }
+    }, 100)
 
     // 延迟展示评分
     const t1 = setTimeout(() => {
@@ -320,6 +431,13 @@ const ResultScene: React.FC = () => {
     '完美！你就是五星级大厨！',
   ][Math.min(score.stars, 5) - 1]
 
+  const p1Member = familyMembers.find(m => m.id === 'p1_default') || familyMembers[0]
+  const p2Member = familyMembers.find(m => m.id === 'p2_default') || familyMembers[1]
+
+  const membersDisplay = mode === 'coop'
+    ? `${p1Member?.avatar || '👨‍🍳'} ${p1Member?.name || '家长'} + ${p2Member?.avatar || '👧'} ${p2Member?.name || '小朋友'} 共同完成`
+    : `${p1Member?.avatar || '👨‍🍳'} ${p1Member?.name || '家长'} 独自完成`
+
   return (
     <div className="min-h-screen p-4 md:p-8 relative">
       <Confetti show={showConfetti} />
@@ -355,6 +473,14 @@ const ResultScene: React.FC = () => {
       <main className="max-w-4xl mx-auto space-y-6">
         {/* 星级展示 */}
         <Card className="text-center py-8" color={selectedRecipe.colorTheme}>
+          <motion.p
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="text-gray-500 text-sm mb-4"
+          >
+            {membersDisplay}
+          </motion.p>
           <StarRating stars={score.stars} size="xl" />
           
           {score.isNewRecord && (
@@ -389,6 +515,46 @@ const ResultScene: React.FC = () => {
             </motion.p>
           </motion.div>
         </Card>
+
+        {/* 本次复盘 */}
+        {feedback.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.4 }}
+          >
+            <Card>
+              <h3 className="font-happy text-2xl text-gray-700 mb-5 text-center">
+                📝 本次复盘
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {feedback.map((item, index) => (
+                  <motion.div
+                    key={item.type + index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 1.5 + index * 0.15 }}
+                    className={`p-4 rounded-2xl border-2 ${
+                      item.type === 'praise' 
+                        ? 'bg-green-50 border-green-200' 
+                        : item.type === 'tip'
+                        ? 'bg-yellow-50 border-yellow-200'
+                        : 'bg-blue-50 border-blue-200'
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">{item.icon}</div>
+                    <h4 className="font-happy text-lg text-gray-700 mb-1">
+                      {item.title}
+                    </h4>
+                    <p className="text-sm text-gray-600">
+                      {item.description}
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+            </Card>
+          </motion.div>
+        )}
 
         {/* 分项得分 */}
         <Card>

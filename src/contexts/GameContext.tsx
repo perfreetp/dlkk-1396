@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react'
-import type { GameState, GameAction, Recipe, ScoreRecord } from '../types/game'
+import type { GameState, GameAction, Recipe, FamilyMember, WeeklyProgress, Sticker, PracticeRecord, ScoreRecord } from '../types/game'
 import { RECIPES } from '../data/recipes'
+import { getCurrentWeekKey, generateWeeklyChallenges } from '../data/weeklyChallenges'
 
 export const STORAGE_KEY = 'kitchen_coop_game_state_v1'
 
@@ -46,6 +47,13 @@ export const createInitialState = (): GameState => {
     unlockedAchievements: [],
     scoreHistory: [],
     learnedIngredients: [],
+    familyMembers: [
+      { id: 'p1_default', name: '家长', avatar: '👨‍🍳', role: 'parent', preferTaskType: 'chop' },
+      { id: 'p2_default', name: '小朋友', avatar: '👧🍳', role: 'child', preferTaskType: 'season' },
+    ],
+    stickers: [],
+    weeklyProgress: null,
+    practiceHistory: [],
   }
 }
 
@@ -238,12 +246,66 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
         unlockedAchievements: state.unlockedAchievements,
         scoreHistory: state.scoreHistory,
         learnedIngredients: state.learnedIngredients,
+        familyMembers: state.familyMembers,
+        stickers: state.stickers,
+        weeklyProgress: state.weeklyProgress,
+        practiceHistory: state.practiceHistory,
         mode: state.mode,
       }
     }
     
     case 'LOAD_STATE':
       return { ...state, ...action.state }
+    
+    case 'SET_FAMILY_MEMBER': {
+      const members = [...state.familyMembers]
+      const idx = members.findIndex(m => m.id === action.member.id)
+      if (idx >= 0) {
+        members[idx] = action.member
+      } else {
+        members.push(action.member)
+      }
+      return { ...state, familyMembers: members }
+    }
+    
+    case 'ADD_STICKER': {
+      if (state.stickers.some(s => s.id === action.sticker.id)) return state
+      return { ...state, stickers: [...state.stickers, { ...action.sticker, obtainedAt: new Date().toISOString() }] }
+    }
+    
+    case 'UPDATE_WEEKLY_PROGRESS': {
+      if (!state.weeklyProgress) return state
+      const current = state.weeklyProgress.progress[action.challengeId] || 0
+      const amount = action.amount ?? 1
+      return {
+        ...state,
+        weeklyProgress: {
+          ...state.weeklyProgress,
+          progress: {
+            ...state.weeklyProgress.progress,
+            [action.challengeId]: current + amount,
+          },
+        },
+      }
+    }
+    
+    case 'SET_WEEKLY_PROGRESS':
+      return { ...state, weeklyProgress: action.progress }
+    
+    case 'CLAIM_WEEKLY_REWARD': {
+      if (!state.weeklyProgress) return state
+      if (state.weeklyProgress.claimed.includes(action.challengeId)) return state
+      return {
+        ...state,
+        weeklyProgress: {
+          ...state.weeklyProgress,
+          claimed: [...state.weeklyProgress.claimed, action.challengeId],
+        },
+      }
+    }
+    
+    case 'ADD_PRACTICE_RECORD':
+      return { ...state, practiceHistory: [action.record, ...state.practiceHistory].slice(0, 50) }
     
     default:
       return state
@@ -260,6 +322,10 @@ export const loadFromStorage = (): Partial<GameState> | null => {
       unlockedAchievements: parsed.unlockedAchievements,
       scoreHistory: parsed.scoreHistory,
       learnedIngredients: parsed.learnedIngredients,
+      familyMembers: parsed.familyMembers,
+      stickers: parsed.stickers,
+      weeklyProgress: parsed.weeklyProgress,
+      practiceHistory: parsed.practiceHistory,
     }
   } catch {
     return null
@@ -273,6 +339,10 @@ export const saveToStorage = (state: GameState) => {
       unlockedAchievements: state.unlockedAchievements,
       scoreHistory: state.scoreHistory,
       learnedIngredients: state.learnedIngredients,
+      familyMembers: state.familyMembers,
+      stickers: state.stickers,
+      weeklyProgress: state.weeklyProgress,
+      practiceHistory: state.practiceHistory,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
   } catch {
@@ -288,6 +358,12 @@ interface GameContextValue {
   finishCooking: () => void
   resetSession: () => void
   checkUnlockRecipes: (extraRecord?: ScoreRecord) => string[]
+  setFamilyMember: (member: FamilyMember) => void
+  addSticker: (sticker: Sticker) => void
+  updateWeeklyProgress: (challengeId: string, amount?: number) => void
+  claimWeeklyReward: (challengeId: string) => void
+  addPracticeRecord: (record: PracticeRecord) => void
+  ensureWeeklyProgress: () => void
 }
 
 const GameContext = createContext<GameContextValue | null>(null)
@@ -296,7 +372,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [state, dispatch] = useReducer(gameReducer, null, () => {
     const initial = createInitialState()
     const stored = loadFromStorage()
-    return stored ? { ...initial, ...stored } : initial
+    if (!stored) return initial
+    // 只合并不是 undefined 的字段，避免旧数据覆盖新字段
+    const merged: GameState = { ...initial }
+    Object.entries(stored).forEach(([key, value]) => {
+      if (value !== undefined) {
+        ;(merged as Record<string, unknown>)[key] = value
+      }
+    })
+    return merged
   })
 
   useEffect(() => {
@@ -307,7 +391,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     handler()
     return () => clearTimeout(timeout)
-  }, [state.unlockedRecipes, state.unlockedAchievements, state.scoreHistory, state.learnedIngredients])
+  }, [state.unlockedRecipes, state.unlockedAchievements, state.scoreHistory, state.learnedIngredients,
+      state.familyMembers, state.stickers, state.weeklyProgress, state.practiceHistory])
 
   const selectRecipe = useCallback((recipe: Recipe) => {
     dispatch({ type: 'SELECT_RECIPE', recipe })
@@ -353,6 +438,47 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newlyUnlocked
   }, [state.unlockedRecipes, state.scoreHistory])
 
+  const setFamilyMember = useCallback((member: FamilyMember) => {
+    dispatch({ type: 'SET_FAMILY_MEMBER', member })
+  }, [])
+
+  const addSticker = useCallback((sticker: Sticker) => {
+    dispatch({ type: 'ADD_STICKER', sticker })
+  }, [])
+
+  const updateWeeklyProgress = useCallback((challengeId: string, amount = 1) => {
+    dispatch({ type: 'UPDATE_WEEKLY_PROGRESS', challengeId, amount })
+  }, [])
+
+  const claimWeeklyReward = useCallback((challengeId: string) => {
+    dispatch({ type: 'CLAIM_WEEKLY_REWARD', challengeId })
+  }, [])
+
+  const addPracticeRecord = useCallback((record: PracticeRecord) => {
+    dispatch({ type: 'ADD_PRACTICE_RECORD', record })
+  }, [])
+
+  const ensureWeeklyProgress = useCallback(() => {
+    const weekKey = getCurrentWeekKey()
+    if (state.weeklyProgress?.weekKey === weekKey) return
+    const challenges = generateWeeklyChallenges(weekKey)
+    const progress: Record<string, number> = {}
+    challenges.forEach(c => { progress[c.id] = 0 })
+    dispatch({
+      type: 'SET_WEEKLY_PROGRESS',
+      progress: {
+        weekKey,
+        progress,
+        completed: [],
+        claimed: [],
+      }
+    })
+  }, [state.weeklyProgress])
+
+  useEffect(() => {
+    ensureWeeklyProgress()
+  }, [ensureWeeklyProgress])
+
   const value = useMemo(() => ({
     state,
     dispatch,
@@ -361,7 +487,14 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     finishCooking,
     resetSession,
     checkUnlockRecipes,
-  }), [state, selectRecipe, startCooking, finishCooking, resetSession, checkUnlockRecipes])
+    setFamilyMember,
+    addSticker,
+    updateWeeklyProgress,
+    claimWeeklyReward,
+    addPracticeRecord,
+    ensureWeeklyProgress,
+  }), [state, selectRecipe, startCooking, finishCooking, resetSession, checkUnlockRecipes,
+       setFamilyMember, addSticker, updateWeeklyProgress, claimWeeklyReward, addPracticeRecord, ensureWeeklyProgress])
 
   return (
     <GameContext.Provider value={value}>
