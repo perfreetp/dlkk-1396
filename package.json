@@ -1,0 +1,30 @@
+{
+  "name": "kitchen-coop-game",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "亲子厨房协作小游戏 - 温暖有趣的家庭协作体验",
+  "scripts": {
+    "dev": "npx vite",
+    "build": "npx tsc -b && npx vite build",
+    "preview": "npx vite preview",
+    "lint": "npx tsc --noEmit"
+  },
+  "dependencies": {
+    "framer-motion": "^11.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21"
+  }
+}
