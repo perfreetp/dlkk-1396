@@ -8,6 +8,7 @@ export const WEEKLY_CHALLENGE_POOL: Omit<WeeklyChallenge, 'weekKey'>[] = [
   { id: 'wc_coop_5', title: '默契搭档', description: '双人模式完成5次做菜', icon: '🤝', type: 'coop', target: 5, reward: 'sticker_coop_5' },
   { id: 'wc_cook_3', title: '美食三连', description: '完成任意3道菜', icon: '🍳', type: 'cook', target: 3, reward: 'sticker_first_dish' },
   { id: 'wc_practice_chop', title: '刀工练习生', description: '完成3次切菜专项练习', icon: '🔪', type: 'practice', target: 3, reward: 'sticker_first_dish' },
+  { id: 'wc_perfect_week', title: '完美之作', description: '任意一道菜获得5星评价', icon: '⭐', type: 'cook', target: 1, reward: 'sticker_perfect_week' },
 ]
 
 // 生成当前周的key 如 '2026-W24'
@@ -20,9 +21,7 @@ export const getCurrentWeekKey = (): string => {
   return `${year}-W${week}`
 }
 
-// 从池中选取本周挑战（简化版：固定前3个，有weekKey）
+// 从池中选取本周挑战
 export const generateWeeklyChallenges = (weekKey: string): WeeklyChallenge[] => {
-  // 简单起见取前3个不同类型的
-  const selected = WEEKLY_CHALLENGE_POOL.slice(0, 4)
-  return selected.map(c => ({ ...c, weekKey }))
+  return WEEKLY_CHALLENGE_POOL.map(c => ({ ...c, weekKey }))
 }

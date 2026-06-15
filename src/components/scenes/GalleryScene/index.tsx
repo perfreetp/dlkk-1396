@@ -15,7 +15,35 @@ import { generateWeeklyChallenges, getCurrentWeekKey } from '@/data/weeklyChalle
 import { formatTime, getPlayerLabel } from '@/utils/scoring'
 import type { ScoreRecord, WeeklyChallenge } from '@/types/game'
 
-type Tab = 'recipes' | 'ingredients' | 'weekly' | 'achievements' | 'stickers' | 'history'
+type Tab = 'recipes' | 'ingredients' | 'weekly' | 'achievements' | 'stickers' | 'history' | 'weeklyReport'
+
+const isInThisWeek = (dateStr: string): boolean => {
+  const d = new Date(dateStr)
+  const now = new Date()
+  const start = new Date(now)
+  start.setDate(now.getDate() - now.getDay())
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 7)
+  return d >= start && d < end
+}
+
+const getWeekRange = (): string => {
+  const now = new Date()
+  const start = new Date(now)
+  start.setDate(now.getDate() - now.getDay())
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return `${start.getMonth() + 1}/${start.getDate()} - ${end.getMonth() + 1}/${end.getDate()}`
+}
+
+const getCurrentWeekNumber = (): number => {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), 0, 1)
+  const diff = now.getTime() - start.getTime()
+  const oneWeek = 1000 * 60 * 60 * 24 * 7
+  return Math.ceil(diff / oneWeek)
+}
 
 const TabButton: React.FC<{
   active: boolean
@@ -654,10 +682,336 @@ const WeeklyChallenges: React.FC = () => {
   )
 }
 
+// ==== 家庭成长周报 ====
+const WeeklyReport: React.FC = () => {
+  const { state } = useGame()
+  const { scoreHistory, practiceHistory, stickers, familyMembers } = state
+  const weekNumber = getCurrentWeekNumber()
+  const weekRange = getWeekRange()
+
+  const weeklyDishes = useMemo(() => {
+    return scoreHistory.filter(r => isInThisWeek(r.date))
+  }, [scoreHistory])
+
+  const dishStats = useMemo(() => {
+    const map: Record<string, { recipe: typeof RECIPES[0]; count: number; bestScore: ScoreRecord; dates: string[] }> = {}
+    weeklyDishes.forEach(r => {
+      const recipe = RECIPES.find(rec => rec.id === r.recipeId)
+      if (!recipe) return
+      if (!map[r.recipeId]) {
+        map[r.recipeId] = { recipe, count: 0, bestScore: r, dates: [] }
+      }
+      map[r.recipeId].count += 1
+      map[r.recipeId].dates.push(r.date)
+      if (r.totalScore > map[r.recipeId].bestScore.totalScore) {
+        map[r.recipeId].bestScore = r
+      }
+    })
+    return Object.values(map)
+  }, [weeklyDishes])
+
+  const participationStats = useMemo(() => {
+    const stats: Record<string, { name: string; avatar: string; count: number }> = {}
+    familyMembers.forEach(m => {
+      stats[m.id] = { name: m.name, avatar: m.avatar, count: 0 }
+    })
+    weeklyDishes.forEach(r => {
+      if (r.p1Name) {
+        const p1 = familyMembers.find(m => m.id === 'p1_default')
+        if (p1) stats[p1.id].count += 1
+      }
+      if (r.mode === 'coop' && r.p2Name) {
+        const p2 = familyMembers.find(m => m.id === 'p2_default')
+        if (p2) stats[p2.id].count += 1
+      }
+    })
+    return Object.values(stats)
+  }, [weeklyDishes, familyMembers])
+
+  const weeklyPractice = useMemo(() => {
+    return practiceHistory.filter(p => isInThisWeek(p.date))
+  }, [practiceHistory])
+
+  const practiceProgress = useMemo(() => {
+    if (weeklyPractice.length === 0) return null
+    const types: Record<string, { scores: number[]; type: string; emoji: string; label: string }> = {
+      chop: { scores: [], type: 'chop', emoji: '🔪', label: '切菜' },
+      season: { scores: [], type: 'season', emoji: '🧂', label: '调味' },
+      heat: { scores: [], type: 'heat', emoji: '🔥', label: '火候' },
+    }
+    weeklyPractice.forEach(p => {
+      if (types[p.type]) {
+        types[p.type].scores.push(p.score)
+      }
+    })
+    const results = Object.values(types)
+      .filter(t => t.scores.length > 0)
+      .map(t => {
+        const avg = Math.round(t.scores.reduce((a, b) => a + b, 0) / t.scores.length)
+        const first = t.scores[t.scores.length - 1]
+        const last = t.scores[0]
+        const improvement = last - first
+        return { ...t, avg, first, last, improvement }
+      })
+      .sort((a, b) => b.improvement - a.improvement)
+    return results.length > 0 ? results[0] : null
+  }, [weeklyPractice])
+
+  const weeklyStickers = useMemo(() => {
+    return stickers.filter(s => s.obtainedAt && isInThisWeek(s.obtainedAt))
+  }, [stickers])
+
+  const getRarityColor = (rarity: string) => {
+    switch (rarity) {
+      case 'epic': return '#C9B1FF'
+      case 'rare': return '#7FD1AE'
+      default: return '#FFB366'
+    }
+  }
+
+  const getRarityLabel = (rarity: string) => {
+    switch (rarity) {
+      case 'epic': return '史诗'
+      case 'rare': return '稀有'
+      default: return '普通'
+    }
+  }
+
+  const generateSummary = (): string[] => {
+    const messages: string[] = []
+    const coopCount = weeklyDishes.filter(r => r.mode === 'coop').length
+    const hasFiveStar = weeklyDishes.some(r => r.stars >= 5)
+
+    if (weeklyDishes.length >= 3) {
+      messages.push('这周咱们一起做了好多菜，厨房越来越热闹啦！')
+    }
+    if (coopCount >= 2) {
+      messages.push('家长和小朋友配合越来越默契啦，为你们骄傲~')
+    }
+    if (hasFiveStar) {
+      messages.push('太棒了！拿到了满星评价，真是大厨级别！')
+    }
+    if (weeklyStickers.length >= 3) {
+      messages.push('这周收获了这么多贴纸，真是满满的成就感~')
+    }
+    if (messages.length === 0) {
+      messages.push('下周继续加油，一起解锁更多美食和贴纸吧！')
+    }
+    return messages.slice(0, 3)
+  }
+
+  const summary = generateSummary()
+  const totalParticipation = participationStats.reduce((s, p) => s + p.count, 0) || 1
+
+  return (
+    <div className="space-y-6">
+      <div className="text-center mb-6">
+        <motion.div
+          animate={{ y: [0, -5, 0] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="text-6xl mb-2"
+        >
+          📰
+        </motion.div>
+        <h3 className="font-happy text-2xl md:text-3xl text-warm-500">
+          本周家庭成长周报 · 第{weekNumber}周
+        </h3>
+        <p className="text-sm text-gray-400 mt-1">
+          {weekRange}
+        </p>
+      </div>
+
+      <Card color="#FFB366" className="mb-6">
+        <h4 className="font-happy text-xl text-gray-700 mb-3 flex items-center gap-2">
+          <span>🍳</span>
+          本周美食记录
+          <span className="text-xs font-body text-gray-400 ml-2">
+            共做了 {weeklyDishes.length} 道菜
+          </span>
+        </h4>
+        {dishStats.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <div className="text-4xl mb-2">🍽️</div>
+            <p>本周还没做菜哦，快去厨房大显身手吧~</p>
+          </div>
+        ) : (
+          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+            {dishStats.map((d, idx) => (
+              <motion.div
+                key={d.recipe.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.08 }}
+                className="shrink-0 w-36"
+              >
+                <Card color={d.recipe.colorTheme} className="text-center h-full">
+                  <div className="text-4xl mb-1">{d.recipe.emoji}</div>
+                  <h5 className="font-happy text-sm text-gray-700 mb-1">{d.recipe.name}</h5>
+                  <div className="flex justify-center gap-0.5 mb-1">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <span key={i} className={i < d.bestScore.stars ? 'text-yolk-500 text-xs' : 'text-gray-200 text-xs'}>⭐</span>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    {new Date(d.dates[0]).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
+                  </p>
+                  {d.count > 1 && (
+                    <span className="inline-block mt-1 text-[10px] bg-warm-100 text-warm-600 px-2 py-0.5 rounded-full font-happy">
+                      × {d.count} 次
+                    </span>
+                  )}
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card color="#7FD1AE" className="mb-6">
+        <h4 className="font-happy text-xl text-gray-700 mb-4 flex items-center gap-2">
+          <span>👥</span>
+          家庭参与榜
+        </h4>
+        <div className="space-y-4">
+          {participationStats.map((p, idx) => (
+            <div key={p.name} className="flex items-center gap-3">
+              <div className="text-3xl shrink-0">{p.avatar}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-happy text-gray-700">{p.name}</span>
+                  <span className="text-sm text-gray-500">参与了 {p.count} 次</span>
+                </div>
+                <div className="h-3 bg-cream-200 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(p.count / totalParticipation) * 100}%` }}
+                    transition={{ duration: 0.8, delay: idx * 0.2 }}
+                    className="h-full rounded-full"
+                    style={{
+                      background: idx === 0 
+                        ? 'linear-gradient(90deg, #7FD1AE, #5BBF9A)'
+                        : 'linear-gradient(90deg, #FFB366, #FF9F43)',
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+          {participationStats.length >= 2 && (
+            <p className="text-center text-sm text-gray-500 pt-2 border-t border-cream-200">
+              {participationStats[0].name}参与了 {participationStats[0].count} 次 · {participationStats[1].name}参与了 {participationStats[1].count} 次
+            </p>
+          )}
+        </div>
+      </Card>
+
+      <Card color="#C9B1FF" className="mb-6">
+        <h4 className="font-happy text-xl text-gray-700 mb-3 flex items-center gap-2">
+          <span>📈</span>
+          进步最大的任务
+        </h4>
+        {!practiceProgress ? (
+          <div className="text-center py-8 text-gray-400">
+            <div className="text-4xl mb-2">🎯</div>
+            <p>本周还没专项练习，快去试试吧~</p>
+          </div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-4"
+          >
+            <div className="text-6xl mb-3">{practiceProgress.emoji}</div>
+            <h5 className="font-happy text-2xl text-lavender-400 mb-2">
+              {practiceProgress.label}进步最大！
+            </h5>
+            <p className="text-gray-600">
+              平均分数从 <span className="font-bold text-gray-500">{practiceProgress.first}</span>
+              {' → '}
+              <span className="font-bold text-lavender-500">{practiceProgress.last}</span>
+              {' 🎉'}
+            </p>
+            <p className="text-sm text-gray-400 mt-2">
+              共练习 {practiceProgress.scores.length} 次，平均分 {practiceProgress.avg}
+            </p>
+          </motion.div>
+        )}
+      </Card>
+
+      <Card color="#FFD93D" className="mb-6">
+        <h4 className="font-happy text-xl text-gray-700 mb-3 flex items-center gap-2">
+          <span>🎨</span>
+          本周获得的贴纸
+          <span className="text-xs font-body text-gray-400 ml-2">
+            {weeklyStickers.length} 张
+          </span>
+        </h4>
+        {weeklyStickers.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <div className="text-4xl mb-2">🎁</div>
+            <p>本周继续努力，能拿更多贴纸哦~</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+            {weeklyStickers.map((s, idx) => (
+              <motion.div
+                key={s.id}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: idx * 0.05 }}
+              >
+                <div
+                  className="rounded-2xl p-3 text-center border-2 bg-white"
+                  style={{
+                    borderColor: getRarityColor(s.rarity),
+                    boxShadow: `0 0 15px ${getRarityColor(s.rarity)}30`,
+                  }}
+                >
+                  <div className="text-3xl mb-1">{s.emoji}</div>
+                  <h5 className="font-happy text-xs text-gray-700 mb-1">{s.name}</h5>
+                  <span
+                    className="inline-block text-[10px] px-2 py-0.5 rounded-full"
+                    style={{
+                      background: `${getRarityColor(s.rarity)}20`,
+                      color: getRarityColor(s.rarity),
+                    }}
+                  >
+                    {getRarityLabel(s.rarity)}
+                  </span>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card color="#FF9AA2" className="bg-gradient-to-br from-pink-50 to-cream-50">
+        <h4 className="font-happy text-xl text-gray-700 mb-3 flex items-center gap-2">
+          <span>💝</span>
+          本周总结
+        </h4>
+        <div className="space-y-2">
+          {summary.map((msg, idx) => (
+            <motion.p
+              key={idx}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.15 }}
+              className="text-gray-600 leading-relaxed"
+            >
+              {msg}
+            </motion.p>
+          ))}
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 // ==== 贴纸收藏 ====
 const StickerCollection: React.FC = () => {
-  const { state } = useGame()
-  const { stickers } = state
+  const { state, toggleShowcaseSticker } = useGame()
+  const { stickers, showcasedStickers } = state
   const sound = useSoundFX()
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null)
 
@@ -782,15 +1136,36 @@ const StickerCollection: React.FC = () => {
                         {unlocked ? sticker.name : '???'}
                       </h5>
                       {unlocked && (
-                        <span
-                          className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full"
-                          style={{
-                            background: `${getRarityColor(sticker.rarity)}20`,
-                            color: getRarityColor(sticker.rarity),
-                          }}
-                        >
-                          {getRarityLabel(sticker.rarity)}
-                        </span>
+                        <>
+                          <span
+                            className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full"
+                            style={{
+                              background: `${getRarityColor(sticker.rarity)}20`,
+                              color: getRarityColor(sticker.rarity),
+                            }}
+                          >
+                            {getRarityLabel(sticker.rarity)}
+                          </span>
+                          <motion.button
+                            whileTap={{ scale: 0.92 }}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              sound.playClick()
+                              toggleShowcaseSticker(sticker.id)
+                            }}
+                            className={`
+                              mt-2 w-full py-1 px-2 rounded-full text-[10px] font-happy
+                              transition-all
+                              ${showcasedStickers.includes(sticker.id)
+                                ? 'bg-mint-500 text-white shadow-sm'
+                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}
+                            `}
+                          >
+                            {showcasedStickers.includes(sticker.id)
+                              ? '📌 已展示'
+                              : '📍 展示到首页'}
+                          </motion.button>
+                        </>
                       )}
                     </motion.div>
 
@@ -845,7 +1220,7 @@ const StatBox: React.FC<{ icon: string; label: string; value: string; color: str
 const GalleryScene: React.FC = () => {
   const navigate = useNavigate()
   const { state } = useGame()
-  const { unlockedRecipes, learnedIngredients, unlockedAchievements, scoreHistory, stickers, weeklyProgress } = state
+  const { unlockedRecipes, learnedIngredients, unlockedAchievements, scoreHistory, stickers, weeklyProgress, practiceHistory } = state
   const [tab, setTab] = useState<Tab>('recipes')
   const sound = useSoundFX()
 
@@ -855,8 +1230,11 @@ const GalleryScene: React.FC = () => {
     (weeklyProgress?.progress[c.id] || 0) >= c.target
   ).length
 
+  const weeklyReportCount = scoreHistory.filter(r => isInThisWeek(r.date)).length
+
   const tabs: { id: Tab; icon: string; label: string; count: string }[] = [
     { id: 'recipes', icon: '📖', label: '菜谱图鉴', count: `${unlockedRecipes.length}/${RECIPES.length}` },
+    { id: 'weeklyReport', icon: '📰', label: '成长周报', count: `${weeklyReportCount}` },
     { id: 'ingredients', icon: '🥕', label: '食材知识', count: `${learnedIngredients.length}/${INGREDIENTS.length}` },
     { id: 'weekly', icon: '🎯', label: '每周挑战', count: `${completedWeekly}/${weeklyChallenges.length}` },
     { id: 'achievements', icon: '🏅', label: '成就徽章', count: `${unlockedAchievements.length}/${ACHIEVEMENTS.length}` },
@@ -918,6 +1296,7 @@ const GalleryScene: React.FC = () => {
               transition={{ duration: 0.25 }}
             >
               {tab === 'recipes' && <RecipeBook />}
+              {tab === 'weeklyReport' && <WeeklyReport />}
               {tab === 'ingredients' && <IngredientCards />}
               {tab === 'weekly' && <WeeklyChallenges />}
               {tab === 'achievements' && <AchievementWall />}

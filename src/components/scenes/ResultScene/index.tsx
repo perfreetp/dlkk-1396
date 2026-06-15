@@ -14,8 +14,9 @@ import { calculateFinalScore, formatTime, getPlayerLabel } from '@/utils/scoring
 import { ACHIEVEMENTS, checkAchievement } from '@/data/achievements'
 import { RECIPES } from '@/data/recipes'
 import { PRAISE_TEMPLATES, TIP_TEMPLATES, PRACTICE_TEMPLATES } from '@/data/feedback'
+import { getStickerById } from '@/data/stickers'
 import { genId } from '@/utils/scoring'
-import type { ScoreRecord, FinalScore, FeedbackItem } from '@/types/game'
+import type { ScoreRecord, FinalScore, FeedbackItem, WeeklyChallenge } from '@/types/game'
 
 // ==== 撒花特效 ====
 const Confetti: React.FC<{ show: boolean }> = ({ show }) => {
@@ -189,7 +190,7 @@ const UnlockModal: React.FC<{
 // ==== 主场景 ====
 const ResultScene: React.FC = () => {
   const navigate = useNavigate()
-  const { state, dispatch, checkUnlockRecipes, selectRecipe, updateWeeklyProgress, ensureWeeklyProgress } = useGame()
+  const { state, dispatch, checkUnlockRecipes, selectRecipe, updateWeeklyProgress, ensureWeeklyProgress, claimWeeklyReward, addSticker, getClaimableChallenges, setFamilyMember } = useGame()
   const { selectedRecipe, mode, chopRhythmScores, seasonTimingScores,
           heatHistory, stirQuality, incidentsResolved, timer, scoreHistory,
           unlockedAchievements, finalScore, mode: gameMode, familyMembers,
@@ -205,6 +206,18 @@ const ResultScene: React.FC = () => {
   const [showAchievements, setShowAchievements] = useState<string[]>([])
   const [newRecipe, setNewRecipe] = useState<string | undefined>()
   const [feedback, setFeedback] = useState<FeedbackItem[]>([])
+  const [pendingRewards, setPendingRewards] = useState<WeeklyChallenge[]>([])
+
+  const handleClaimReward = (challenge: WeeklyChallenge) => {
+    claimWeeklyReward(challenge.id)
+    const sticker = getStickerById(challenge.reward)
+    if (sticker) {
+      addSticker(sticker)
+    }
+    sound.playSuccess()
+    speech.speak('好棒')
+    setPendingRewards(prev => prev.filter(c => c.id !== challenge.id))
+  }
 
   useEffect(() => {
     if (!selectedRecipe || score) return
@@ -337,6 +350,13 @@ const ResultScene: React.FC = () => {
       if (incidentsResolved > 0) {
         updateWeeklyProgress('wc_incident_10', incidentsResolved)
       }
+      if (calculated.stars === 5) {
+        updateWeeklyProgress('wc_perfect_week', 1)
+      }
+      setTimeout(() => {
+        const claimable = getClaimableChallenges()
+        setPendingRewards(claimable)
+      }, 200)
     }, 100)
 
     // 延迟展示评分
@@ -471,6 +491,63 @@ const ResultScene: React.FC = () => {
       </header>
 
       <main className="max-w-4xl mx-auto space-y-6">
+        {/* 可领取奖励横幅 */}
+        <AnimatePresence>
+          {pendingRewards.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+              className="rounded-3xl p-5 border-4 shadow-xl"
+              style={{
+                background: 'linear-gradient(135deg, #FFE5EC 0%, #FFF0F5 30%, #E8F4FD 70%, #F0E6FF 100%)',
+                borderColor: '#FFB6C1',
+              }}
+            >
+              <div className="text-center mb-4">
+                <motion.p
+                  animate={{ scale: [1, 1.05, 1] }}
+                  transition={{ repeat: Infinity, duration: 2 }}
+                  className="font-happy text-2xl text-pink-500"
+                >
+                  🎁 本周有 {pendingRewards.length} 个新奖励可以领取！
+                </motion.p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {pendingRewards.map((challenge, idx) => {
+                  const sticker = getStickerById(challenge.reward)
+                  return (
+                    <motion.div
+                      key={challenge.id}
+                      initial={{ opacity: 0, x: -30 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 border-2 border-pink-200 flex flex-col items-center text-center"
+                    >
+                      <div className="text-5xl mb-2">{sticker?.emoji || challenge.icon}</div>
+                      <p className="font-happy text-lg text-gray-700 mb-1">
+                        {sticker?.name || challenge.title}
+                      </p>
+                      <p className="text-xs text-gray-500 mb-3">
+                        {sticker?.description || challenge.description}
+                      </p>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        leftIcon="🎉"
+                        onClick={() => handleClaimReward(challenge)}
+                      >
+                        领取
+                      </Button>
+                    </motion.div>
+                  )
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* 星级展示 */}
         <Card className="text-center py-8" color={selectedRecipe.colorTheme}>
           <motion.p

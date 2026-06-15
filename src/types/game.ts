@@ -164,6 +164,7 @@ export interface WeeklyChallenge {
   target: number
   reward: string  // sticker id
   weekKey: string  // 如 '2026-W24'
+  practiceType?: 'chop' | 'season' | 'heat'  // 仅 type='practice' 时生效
 }
 
 export interface WeeklyProgress {
@@ -227,6 +228,7 @@ export interface GameState {
   learnedIngredients: string[]
   familyMembers: FamilyMember[]
   stickers: Sticker[]
+  showcasedStickers: string[]
   weeklyProgress: WeeklyProgress | null
   practiceHistory: PracticeRecord[]
 }
@@ -265,3 +267,4 @@ export type GameAction =
   | { type: 'CLAIM_WEEKLY_REWARD'; challengeId: string }
   | { type: 'SET_WEEKLY_PROGRESS'; progress: WeeklyProgress }
   | { type: 'ADD_PRACTICE_RECORD'; record: PracticeRecord }
+  | { type: 'TOGGLE_SHOWCASE_STICKER'; stickerId: string }

@@ -10,8 +10,9 @@ import { Card } from '@/components/common/Card'
 import { StarRating } from '@/components/common/StarRating'
 import { useSpeechBubble } from '@/components/common/SpeechBubble'
 import { useSoundFX } from '@/hooks/useSoundFX'
-import type { Recipe } from '@/types/game'
+import type { Recipe, Sticker } from '@/types/game'
 import { getPlayerLabel } from '@/utils/scoring'
+import { getStickerById, STICKERS } from '@/data/stickers'
 
 const RecipeCard: React.FC<{
   recipe: Recipe
@@ -392,10 +393,189 @@ const FamilyMemberCard: React.FC<{
   )
 }
 
+const StickerWall: React.FC<{
+  showcasedStickerIds: string[]
+  allStickers: Sticker[]
+  onAddClick: () => void
+}> = ({ showcasedStickerIds, allStickers, onAddClick }) => {
+  const [tooltip, setTooltip] = useState<{ sticker: Sticker; x: number; y: number } | null>(null)
+  const slots = Array.from({ length: 6 }, (_, i) => i)
+
+  const getStickerShine = (obtainedAt?: string): number => {
+    if (!obtainedAt) return 0.8
+    const daysAgo = (Date.now() - new Date(obtainedAt).getTime()) / (1000 * 60 * 60 * 24)
+    return Math.max(0.3, Math.min(1, 1 - daysAgo * 0.02))
+  }
+
+  const getRarityGlow = (rarity: Sticker['rarity']): string => {
+    switch (rarity) {
+      case 'epic': return '0 0 20px rgba(251, 191, 36, 0.6), 0 4px 12px rgba(0,0,0,0.15)'
+      case 'rare': return '0 0 16px rgba(139, 92, 246, 0.4), 0 4px 10px rgba(0,0,0,0.12)'
+      default: return '0 4px 10px rgba(0,0,0,0.1)'
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.15 }}
+      className="mb-6 max-w-2xl mx-auto"
+    >
+      <div className="relative">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <p className="font-happy text-lg text-gray-600">
+            🎨 我们家的贴纸墙
+          </p>
+          <p className="text-xs text-gray-400 font-body">
+            已展示 {showcasedStickerIds.length}/6
+          </p>
+        </div>
+
+        <div
+          className="relative rounded-3xl p-5 border-4"
+          style={{
+            background: 'linear-gradient(135deg, #FFF8F0 0%, #FFEDDF 50%, #FFF8F0 100%)',
+            borderColor: '#F5D5B5',
+            boxShadow: 'inset 0 2px 8px rgba(255, 200, 150, 0.3), 0 6px 20px rgba(200, 150, 100, 0.15)',
+          }}
+        >
+          <div className="absolute top-2 left-4 text-yellow-300/60 text-xs">✦</div>
+          <div className="absolute top-2 right-6 text-pink-300/60 text-xs">✧</div>
+          <div className="absolute bottom-3 left-8 text-orange-300/50 text-xs">·</div>
+          <div className="absolute bottom-2 right-4 text-rose-300/50 text-xs">·</div>
+
+          <div className="grid grid-cols-3 gap-4 relative z-10">
+            {slots.map((slotIndex) => {
+              const stickerId = showcasedStickerIds[slotIndex]
+              const stickerData = stickerId ? getStickerById(stickerId) : undefined
+              const obtainedInfo = stickerId ? allStickers.find(s => s.id === stickerId) : undefined
+              const rotateDeg = (slotIndex % 3 - 1) * 3 + (slotIndex >= 3 ? -1 : 1) * 2
+
+              if (!stickerData) {
+                return (
+                  <motion.button
+                    key={`slot-${slotIndex}`}
+                    whileHover={{ scale: 1.05, y: -2 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={onAddClick}
+                    className="relative aspect-square rounded-2xl flex flex-col items-center justify-center
+                               border-4 border-dashed border-warm-300 bg-white/40
+                               hover:bg-white/70 hover:border-warm-400 transition-all cursor-pointer
+                               group"
+                  >
+                    <div className="text-3xl text-warm-300 group-hover:text-warm-500 transition-colors mb-1">
+                      ➕
+                    </div>
+                    <p className="text-[10px] text-warm-400 group-hover:text-warm-500 font-body px-1 text-center leading-tight">
+                      去图鉴添加贴纸
+                    </p>
+                  </motion.button>
+                )
+              }
+
+              const shine = getStickerShine(obtainedInfo?.obtainedAt)
+              const glow = getRarityGlow(stickerData.rarity)
+
+              return (
+                <motion.div
+                  key={stickerData.id}
+                  whileHover={{ scale: 1.08, rotate: 0, y: -4 }}
+                  whileTap={{ scale: 0.95 }}
+                  animate={{ rotate: rotateDeg }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className="relative aspect-square"
+                >
+                  <motion.div
+                    animate={{
+                      y: [0, -3, 0],
+                    }}
+                    transition={{
+                      duration: 2.5 + slotIndex * 0.3,
+                      repeat: Infinity,
+                      repeatType: 'reverse' as const,
+                      ease: 'easeInOut',
+                    }}
+                    className="w-full h-full rounded-2xl bg-white flex flex-col items-center justify-center p-2 cursor-pointer
+                               border-4 relative overflow-hidden"
+                    style={{
+                      borderColor: stickerData.rarity === 'epic' ? '#FCD34D' : stickerData.rarity === 'rare' ? '#C4B5FD' : '#FDE68A',
+                      boxShadow: glow,
+                    }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setTooltip({
+                        sticker: stickerData,
+                        x: rect.left + rect.width / 2,
+                        y: rect.top,
+                      })
+                      setTimeout(() => setTooltip(null), 2500)
+                    }}
+                  >
+                    <div
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        background: `radial-gradient(circle at 30% 20%, rgba(255,255,255,${shine * 0.6}) 0%, transparent 60%)`,
+                      }}
+                    />
+                    <motion.div
+                      animate={{ rotate: [0, 5, -5, 0] }}
+                      transition={{
+                        duration: 3 + slotIndex * 0.4,
+                        repeat: Infinity,
+                        repeatType: 'loop' as const,
+                        ease: 'easeInOut',
+                      }}
+                      className="text-5xl mb-1 relative z-10"
+                    >
+                      {stickerData.emoji}
+                    </motion.div>
+                    <p className="text-[11px] font-happy text-gray-600 text-center leading-tight relative z-10 truncate w-full px-1">
+                      {stickerData.name}
+                    </p>
+                  </motion.div>
+                </motion.div>
+              )
+            })}
+          </div>
+
+          <AnimatePresence>
+            {tooltip && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -5, scale: 0.9 }}
+                className="fixed z-50 px-4 py-3 rounded-2xl bg-white shadow-2xl border-4 border-warm-300 max-w-xs"
+                style={{
+                  left: Math.min(Math.max(tooltip.x, 150), window.innerWidth - 150),
+                  top: tooltip.y - 10,
+                  transform: 'translate(-50%, -100%)',
+                }}
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-3xl">{tooltip.sticker.emoji}</span>
+                  <div>
+                    <p className="font-happy text-warm-500 text-lg">{tooltip.sticker.name}</p>
+                    <p className="text-xs text-gray-500 mt-1">{tooltip.sticker.description}</p>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      {tooltip.sticker.rarity === 'epic' ? '✨ 史诗' : tooltip.sticker.rarity === 'rare' ? '💎 稀有' : '🌟 普通'}
+                    </p>
+                  </div>
+                </div>
+                <div className="absolute left-1/2 -bottom-2 w-4 h-4 bg-white border-r-4 border-b-4 border-warm-300 transform -translate-x-1/2 rotate-45" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
 const MenuScene: React.FC = () => {
   const navigate = useNavigate()
   const { state, dispatch, selectRecipe, startCooking, checkUnlockRecipes, setFamilyMember } = useGame()
-  const { selectedRecipe, unlockedRecipes, mode, scoreHistory, learnedIngredients, familyMembers } = state
+  const { selectedRecipe, unlockedRecipes, mode, scoreHistory, learnedIngredients, familyMembers, showcasedStickers, stickers } = state
   const [detailRecipe, setDetailRecipe] = useState<Recipe | null>(null)
   const [editingMember, setEditingMember] = useState<'p1' | 'p2' | null>(null)
   const showBubble = useSpeechBubble()
@@ -549,6 +729,15 @@ const MenuScene: React.FC = () => {
             />
           </div>
         </motion.div>
+
+        <StickerWall
+          showcasedStickerIds={showcasedStickers}
+          allStickers={stickers}
+          onAddClick={() => {
+            sound.playClick()
+            navigate('/gallery')
+          }}
+        />
 
         <Card className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
